@@ -1,0 +1,96 @@
+---
+title: "Practical Machine Learning course Project"
+output: html_document
+---  
+
+####Summary
+The goal of this project to come up with a prediction algorithm for classifying activity of the excercise enthusiasts who take measurements to improve their health into various categories. Depending on the quality and quantiy of the activities measured, they are classified into one of the categories A, B, C, D or E. The variable 'classe' in training dataset holds this value 
+Once the prediction algorithm is run and chosen using training dataset, it is applied on the test dataset that has 20 records and results are submitted as a separate assignment. 
+
+####Data Sources
+The data for the doing this project comes from http://groupware.les.inf.puc-rio.br/har.   
+There are two data sets used in this project. One for training and one for testing
+The links for downloading the data set are given below
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+####Prepare Data
+The data is read from the url mentioned above using methods from RCurl package and cleaned to remove NA's and other missing and incorrect values. 
+
+```{r prep}
+library(RCurl)
+url1 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+url2 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+f1 <- getURL(url1, ssl.verifypeer = FALSE)
+f2 <- getURL(url2, ssl.verifypeer = FALSE)
+
+trainCSV <- read.csv(textConnection(f1), na.strings=c("NA","#DIV/0!",""))
+testCSV <- read.csv(textConnection(f2), na.strings=c("NA","#DIV/0!",""))
+````  
+
+####Preprocess Data
+Training data set is split into two - one for training the model and one for cross validation. caret package has been used to do this. Once the data is partitioned, the variables that doesn't have any impact on classe are identified using nearZeroVar method. These variables are then excluded from analysis. The identification variables in columns 1 to 6 like id, name and timestamps are also removed since these variables also won't have any impact on performance.
+
+```{r preprocess}
+library(caret)
+inTrain <- createDataPartition(y=trainCSV$classe, p=0.75, list=FALSE)
+train <- trainCSV[inTrain, ]
+test <- trainCSV[-inTrain, ]
+nearZeroVars <- nearZeroVar(train, saveMetrics=TRUE)
+train <- train[,rownames(nearZeroVars[which(nearZeroVars$nzv!=TRUE),])]
+train <- train[, -c(1:6)] #get rid of identity and time
+````
+Once the unwanted columns are removed, the columns with too many NAs are removed. Otherwise the random forest classification method will fail. 
+```{r missingNAs}
+colTodelete = vector()
+for(i in 1:length(train)) { 
+        if( sum( is.na( train[, i] ) ) /nrow(train) >= .7 )  
+        {  
+          colTodelete = c(colTodelete,-i)        
+        }  
+}
+train <- train[,c(colTodelete)]
+````
+In test data set for validation, only the columns present in train dataset are retained and for prediction, the 'classe' variable is also removed. The test dataset the 'classe' variable is retained for creating the confusion matrix to find out the accuracy of the method.  
+```{r prepare Test}
+requiredCols <- colnames(train)
+test <- test[requiredCols]
+test1 <- subset(test, select=-c(classe))
+````
+At this stage data preparation is complete. Now the classification is done using two methods -  rpart and Random Forest. The packages rpart and randomForest are used for this. Cross Validation is done by applying the model on the test partition and analysing the confusion matrix results.
+
+####Classification and Cross Validation
+Let's first use rpart method to train the model and see the accuracy and error rates
+```{r classifyrPart}
+library(rpart)
+library(randomForest)
+rpartFit <- rpart(classe ~ ., data=train, method="class")
+predRpart <- predict(rpartFit, test1, type = "class")
+confusionMatrix(predRpart, test$classe)
+```
+As per the confusion matrix, the accuracy is 0.7051 or 70.51% and the out of sample error rate is 29.49%
+
+Now let's look at the Random Forest results
+
+```{r classifyrf}
+rfFit <- randomForest(classe ~. , data=train)
+predRF <- predict(rfFit, test1, type = "class")
+confusionMatrix(predRF, test$classe)
+````
+Here the accuracy is 0.9957 and the out of sample error rate is 0.0043
+
+Obviously Random Forest method has better prediction accuracy and out of sample error rate. So we use Random Forest predictor for predicting our test dataset  
+
+####Prediction for Test dataset
+Now we do the prediction of the test dataset. The results are submitted to coursera website.
+```{r pred}
+testDataset <- testCSV[colnames(test1)]
+predTest <- predict(rfFit, testDataset, type = "class")
+````
+The results of prediction are as given below
+```{r results}
+predTest
+```
